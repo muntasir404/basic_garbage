@@ -610,9 +610,44 @@
         .tab-content.active {
             display: block;
         }
+
+        /* Loading Spinner */
+        .loading {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255,255,255,0.9);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #764ba2;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body>
+    <!-- Loading Screen -->
+    <div class="loading" id="loadingScreen">
+        <div class="spinner"></div>
+        <p style="margin-top: 20px; color: #764ba2; font-weight: 600;">লোড হচ্ছে...</p>
+    </div>
+
     <div class="bg-animation">
         <div class="circle"></div>
         <div class="circle"></div>
@@ -902,7 +937,6 @@
         // ==========================================
         
         const BuiltInDB = {
-            // Pre-defined Admin Accounts
             admins: [
                 {
                     id: 1,
@@ -936,7 +970,6 @@
                 }
             ],
 
-            // Pre-defined Collectors
             collectors: [
                 { id: 1, name: "আব্দুল কালেক্টর", phone: "01733333333", area: "গুলশান" },
                 { id: 2, name: "মোহন কালেক্টর", phone: "01744444444", area: "বনানী" },
@@ -944,7 +977,6 @@
                 { id: 4, name: "জসিম কালেক্টর", phone: "01766666666", area: "মিরপুর" }
             ],
 
-            // Pre-defined Users
             users: [
                 {
                     id: 101,
@@ -964,7 +996,6 @@
                 }
             ],
 
-            // Pre-defined Requests with Feedback
             requests: [
                 {
                     id: 1001,
@@ -1045,8 +1076,79 @@
             }
         }
 
-        // Call initialization
-        initializeDatabase();
+        // ==========================================
+        // SESSION MANAGEMENT (NEW)
+        // ==========================================
+
+        const SessionManager = {
+            // Save session to localStorage
+            saveSession: function(userData, type) {
+                const session = {
+                    user: userData,
+                    type: type, // 'user' or 'admin'
+                    loginTime: new Date().toISOString(),
+                    isActive: true
+                };
+                localStorage.setItem('currentSession', JSON.stringify(session));
+            },
+
+            // Get current session
+            getSession: function() {
+                const session = localStorage.getItem('currentSession');
+                return session ? JSON.parse(session) : null;
+            },
+
+            // Clear session (logout)
+            clearSession: function() {
+                localStorage.removeItem('currentSession');
+            },
+
+            // Check if session is valid
+            isLoggedIn: function() {
+                const session = this.getSession();
+                if (!session) return false;
+                
+                // Check if session is not expired (optional: 24 hours)
+                const loginTime = new Date(session.loginTime);
+                const now = new Date();
+                const hoursDiff = (now - loginTime) / (1000 * 60 * 60);
+                
+                if (hoursDiff > 24) {
+                    this.clearSession();
+                    return false;
+                }
+                
+                return session.isActive;
+            },
+
+            // Restore session on page load
+            restoreSession: function() {
+                const session = this.getSession();
+                if (!session || !session.isActive) return false;
+
+                if (session.type === 'user') {
+                    const users = JSON.parse(localStorage.getItem('users'));
+                    const user = users.find(u => u.id === session.user.id);
+                    if (user) {
+                        currentUser = user;
+                        showUserDashboard();
+                        return true;
+                    }
+                } else if (session.type === 'admin') {
+                    const admins = JSON.parse(localStorage.getItem('admins'));
+                    const admin = admins.find(a => a.id === session.user.id);
+                    if (admin) {
+                        currentAdmin = admin;
+                        showAdminDashboard();
+                        return true;
+                    }
+                }
+                
+                // If user/admin not found in DB, clear session
+                this.clearSession();
+                return false;
+            }
+        };
 
         // Global Variables
         let currentUser = null;
@@ -1080,6 +1182,23 @@
             
             if (tabName === 'feedback') loadFeedbackList();
             if (tabName === 'admins') loadAdminList();
+        }
+
+        function showUserDashboard() {
+            document.getElementById('mainNav').style.display = 'none';
+            document.querySelectorAll('.card').forEach(card => card.classList.remove('active'));
+            document.getElementById('userDashboard').style.display = 'block';
+            document.getElementById('userNameDisplay').textContent = currentUser.name;
+            loadUserRequests();
+        }
+
+        function showAdminDashboard() {
+            document.getElementById('mainNav').style.display = 'none';
+            document.querySelectorAll('.card').forEach(card => card.classList.remove('active'));
+            document.getElementById('adminDashboard').style.display = 'block';
+            document.getElementById('adminNameDisplay').textContent = currentAdmin.name;
+            document.getElementById('adminRoleDisplay').textContent = currentAdmin.department;
+            loadAdminDashboard();
         }
 
         // ==========================================
@@ -1155,11 +1274,9 @@
                 
                 if (user) {
                     currentUser = user;
-                    document.getElementById('mainNav').style.display = 'none';
-                    document.querySelectorAll('.card').forEach(card => card.classList.remove('active'));
-                    document.getElementById('userDashboard').style.display = 'block';
-                    document.getElementById('userNameDisplay').textContent = user.name;
-                    loadUserRequests();
+                    // Save session
+                    SessionManager.saveSession(user, 'user');
+                    showUserDashboard();
                 } else {
                     showAlert('userLoginAlert', 'ইমেইল বা পাসওয়ার্ড ভুল!');
                 }
@@ -1173,12 +1290,9 @@
                 
                 if (admin) {
                     currentAdmin = admin;
-                    document.getElementById('mainNav').style.display = 'none';
-                    document.querySelectorAll('.card').forEach(card => card.classList.remove('active'));
-                    document.getElementById('adminDashboard').style.display = 'block';
-                    document.getElementById('adminNameDisplay').textContent = admin.name;
-                    document.getElementById('adminRoleDisplay').textContent = admin.department;
-                    loadAdminDashboard();
+                    // Save session
+                    SessionManager.saveSession(admin, 'admin');
+                    showAdminDashboard();
                 } else {
                     showAlert('adminLoginAlert', 'অ্যাডমিন ইমেইল বা পাসওয়ার্ড ভুল!');
                 }
@@ -1188,6 +1302,7 @@
         function logout() {
             currentUser = null;
             currentAdmin = null;
+            SessionManager.clearSession();
             document.getElementById('mainNav').style.display = 'flex';
             document.getElementById('userDashboard').style.display = 'none';
             document.getElementById('adminDashboard').style.display = 'none';
@@ -1520,8 +1635,41 @@
             }
         }
 
-        // Initialize
-        showCard('userLogin');
+        // ==========================================
+        // INITIALIZATION
+        // ==========================================
+
+        // Initialize database
+        initializeDatabase();
+
+        // Check for existing session on page load
+        window.addEventListener('load', function() {
+            document.getElementById('loadingScreen').style.display = 'flex';
+            
+            setTimeout(() => {
+                const isRestored = SessionManager.restoreSession();
+                
+                if (!isRestored) {
+                    showCard('userLogin');
+                }
+                
+                document.getElementById('loadingScreen').style.display = 'none';
+            }, 500); // Small delay for smooth loading
+        });
+
+        // Optional: Check session validity periodically (every 5 minutes)
+        setInterval(() => {
+            if (SessionManager.isLoggedIn()) {
+                // Session is valid, do nothing
+                console.log('Session is active');
+            } else {
+                // Session expired, logout
+                if (currentUser || currentAdmin) {
+                    alert('আপনার সেশনের মেয়াদ শেষ হয়েছে। আবার লগইন করুন।');
+                    logout();
+                }
+            }
+        }, 300000); // 5 minutes
     </script>
 </body>
 </html>
